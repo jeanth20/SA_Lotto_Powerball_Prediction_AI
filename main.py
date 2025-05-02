@@ -116,6 +116,33 @@ def calculate_engineered_features(history):
 
     return pd.DataFrame(features)
 
+# Ensure model prediction is unique (not a past draw)
+def get_valid_prediction(prediction_main, prediction_powerball, df):
+    expected_cols = ['b1', 'b2', 'b3', 'b4', 'b5']
+    if not all(col in df.columns for col in expected_cols):
+        return prediction_main, prediction_powerball  # Cannot validate if columns missing
+
+    # Create set for easy comparison
+    drawn_sets = df[expected_cols].apply(lambda row: set(row), axis=1)
+    predicted_set = set(prediction_main)
+
+    # If predicted main numbers match a past draw, generate alternative
+    if predicted_set in drawn_sets.values:
+        # Alternative strategy: shuffle slightly
+        alternative = list(predicted_set)
+        np.random.shuffle(alternative)
+        alternative = sorted(alternative[:5])
+
+        # Check again
+        if set(alternative) not in drawn_sets.values:
+            return alternative, prediction_powerball
+        else:
+            # Last resort: random new numbers
+            new_numbers = np.random.choice(range(1, 51), 5, replace=False)
+            return sorted(new_numbers), prediction_powerball
+
+    return prediction_main, prediction_powerball
+
 # Function to calculate number likelihoods and train models
 def calculate_likelihoods(df):
     # Add engineered features
@@ -431,6 +458,10 @@ with st.sidebar:
     next_input = X.iloc[-1:].copy()
     prediction_main = model_main.predict(next_input)[0]
     prediction_powerball = model_powerball.predict(next_input)[0]
+    print('==================')
+    print(prediction_main)
+    print(prediction_powerball)
+    print('==================')
 
     # Ensure 5 unique main numbers
     main_numbers = list(dict.fromkeys(prediction_main))
@@ -447,60 +478,83 @@ with st.sidebar:
         powerball_number = np.random.randint(1, 21)
 
     # Display prediction
-    st.markdown(f"**Main Numbers:** {', '.join(map(str, main_numbers))}")
-    st.markdown(f"**PowerBall:** {powerball_number}")
+    st.markdown(f"**Past Draw:** {', '.join(map(str, main_numbers))} {powerball_number}")
+    
+    # Add the validation for unique predictions
+    main_numbersc, powerball_numberc = get_valid_prediction(main_numbers, powerball_number, df)
+
+    if main_numbers == main_numbersc and powerball_number == powerball_numberc:
+        pass
+    else:
+        # Display prediction
+        st.markdown(f"**Main Numbers:** {', '.join(map(str, main_numbersc))}")
+        st.markdown(f"**PowerBall:** {powerball_numberc}")
 
     # Calculate likelihood of this prediction
-    pred_likelihood = calculate_user_numbers_likelihood(main_numbers, powerball_number,
+    pred_likelihood = calculate_user_numbers_likelihood(main_numbersc, powerball_numberc,
                                                        model_main, model_powerball, X, features)
     st.markdown(f"**Likelihood:** {pred_likelihood}%")
 
+    # Display Stats for the Predicted Numbers
+    st.subheader("Predicted Numbers Stats")
+
+    even_count = sum(1 for n in main_numbersc if n % 2 == 0)
+    odd_count = 5 - even_count
+    number_sum = sum(main_numbersc)
+    number_sum_with_bonus = number_sum + powerball_numberc
+    low_range_count = sum(1 for n in main_numbersc if n <= 25)
+    high_range_count = 5 - low_range_count
+    number_range = max(main_numbersc) - min(main_numbersc)
+    number_mean = np.mean(main_numbersc)
+    number_median = np.median(main_numbersc)
+
+    # Check for consecutive numbers
+    sorted_nums = sorted(main_numbersc)
+    has_consecutive = any(b - a == 1 for a, b in zip(sorted_nums, sorted_nums[1:]))
+
+    # Check if set of numbers was drawn before
+    set_already_drawn = False
+    if df is not None:
+        # Combine the columns for the main numbers into sets for comparison
+        drawn_sets = df[['b1', 'b2', 'b3', 'b4', 'b5']].apply(lambda row: set(row), axis=1)
+        
+        # Check if the predicted numbers match any of the drawn sets
+        if any(set(main_numbersc) == drawn_set for drawn_set in drawn_sets):
+            set_already_drawn = True
+
+    # Create dataframe for display
+    stats_df = pd.DataFrame({
+        'Stat': [
+            'Mean',
+            'Median',
+            'Range',
+            'Sum Without PowerBall',
+            'Sum With PowerBall',
+            'Even Count', 
+            'Odd Count',
+            'Low Range Count (1-25)',
+            'High Range Count (26-50)',
+            'Has Consecutive Numbers',
+            'Already Drawn Before'
+        ],
+        'Value': [
+            round(number_mean, 2),
+            number_median,
+            number_range,
+            number_sum,
+            number_sum_with_bonus,
+            even_count,
+            odd_count,
+            low_range_count,
+            high_range_count,
+            'Yes' if has_consecutive else 'No',
+            'Yes' if set_already_drawn else 'No'
+        ]
+    })
+
+    st.dataframe(stats_df, use_container_width=True)
     # Separator
     st.markdown("---")
-
-    # User input for checking likelihood
-    st.subheader("Check Your Numbers")
-
-    # Input for main numbers
-    user_main_numbers = []
-    col1, col2, col3, col4, col5 = st.columns(5)
-
-    with col1:
-        user_main_numbers.append(st.number_input("Number 1", min_value=1, max_value=50, value=1))
-    with col2:
-        user_main_numbers.append(st.number_input("Number 2", min_value=1, max_value=50, value=2))
-    with col3:
-        user_main_numbers.append(st.number_input("Number 3", min_value=1, max_value=50, value=3))
-    with col4:
-        user_main_numbers.append(st.number_input("Number 4", min_value=1, max_value=50, value=4))
-    with col5:
-        user_main_numbers.append(st.number_input("Number 5", min_value=1, max_value=50, value=5))
-
-    # Input for powerball
-    user_powerball = st.number_input("PowerBall", min_value=1, max_value=20, value=1)
-
-    # Check button
-    if st.button("Check Likelihood"):
-        user_likelihood = calculate_user_numbers_likelihood(user_main_numbers, user_powerball,
-                                                           model_main, model_powerball, X, features)
-        st.markdown(f"**Your Numbers Likelihood:** {user_likelihood}%")
-
-        # Compare with prediction
-        if user_likelihood > pred_likelihood:
-            st.success("Your numbers have a higher likelihood than our prediction! 🎉")
-        elif user_likelihood < pred_likelihood:
-            st.warning("Our prediction has a higher likelihood than your numbers.")
-        else:
-            st.info("Your numbers have the same likelihood as our prediction.")
-
-    # Separator
-    st.markdown("---")
-
-    # Number trend analysis
-    st.subheader("Number Trend Analysis")
-    trend_numbers = st.multiselect("Select numbers to analyze trends",
-                                  options=list(range(1, 51)),
-                                  default=[1, 15, 30, 45])
 
 # Main content area
 # st.header("📊 Lotto Powerball Analysis")
@@ -511,7 +565,44 @@ tab1, tab2, tab3, tab4 = st.tabs(["Data & Likelihoods", "Heatmaps", "Trends", "P
 with tab1:
     # Display the data
     st.subheader("📊 Recent 10 Draws")
-    st.dataframe(pd.read_csv("cleaned_lotto_powerball.csv").head(10))
+    coldraw1, coldraw2 = st.columns([3,1])
+    with coldraw1:
+        st.dataframe(pd.read_csv("cleaned_lotto_powerball.csv").head(10))
+
+    with coldraw2:
+        # User input for checking likelihood
+        st.subheader("Check Your Numbers")
+        # Input for main numbers
+        user_main_numbers = []
+        col1, col2, col3, col4, col5 = st.columns(5)
+
+        with col1:
+            user_main_numbers.append(st.number_input("Number 1", min_value=1, max_value=50, value=1))
+        with col2:
+            user_main_numbers.append(st.number_input("Number 2", min_value=1, max_value=50, value=2))
+        with col3:
+            user_main_numbers.append(st.number_input("Number 3", min_value=1, max_value=50, value=3))
+        with col4:
+            user_main_numbers.append(st.number_input("Number 4", min_value=1, max_value=50, value=4))
+        with col5:
+            user_main_numbers.append(st.number_input("Number 5", min_value=1, max_value=50, value=5))
+
+        # Input for powerball
+        user_powerball = st.number_input("PowerBall", min_value=1, max_value=20, value=1)
+
+        # Check button
+        if st.button("Check Likelihood"):
+            user_likelihood = calculate_user_numbers_likelihood(user_main_numbers, user_powerball,
+                                                            model_main, model_powerball, X, features)
+            st.markdown(f"**Your Numbers Likelihood:** {user_likelihood}%")
+
+            # Compare with prediction
+            if user_likelihood > pred_likelihood:
+                st.success("Your numbers have a higher likelihood than our prediction! 🎉")
+            elif user_likelihood < pred_likelihood:
+                st.warning("Our prediction has a higher likelihood than your numbers.")
+            else:
+                st.info("Your numbers have the same likelihood as our prediction.")
 
     # Display likelihood tables
     col1, col2 = st.columns([2, 2])
@@ -543,6 +634,12 @@ with tab2:
     st.pyplot(plot_powerball_heatmap(df))
 
 with tab3:
+    # Number trend analysis
+    st.subheader("Number Trend Analysis")
+    trend_numbers = st.multiselect("Select numbers to analyze trends",
+                                  options=list(range(1, 51)),
+                                  default=[1, 15, 30, 45])
+
     # Display number trends
     st.subheader("� Number Frequency Trends")
     if trend_numbers:
