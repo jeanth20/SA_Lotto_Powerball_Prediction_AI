@@ -204,7 +204,7 @@ main.py
 ![image](https://github.com/user-attachments/assets/5405360e-c631-42de-994b-a973bf6679d0)
 
 mainv2.py
-![image](https://github.com/user-attachments/assets/5405360e-c631-42de-994b-a973bf6679d0)
+![image](https://github.com/user-attachments/assets/1091ec44-37da-4e54-8571-c06b7699a423)
 
 ### Data Sources
 
