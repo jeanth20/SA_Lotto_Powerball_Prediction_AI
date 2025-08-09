@@ -1254,6 +1254,9 @@ def create_interface():
                 1. Enter the latest draw information below
                 2. Click 'Add Draw & Run Cleanup' to add the draw and process all data
                 3. After successful processing, go back to the Predictions tab and click 'Initialize Data & Train Models' to refresh the AI models
+                
+                For the result visit:
+                https://za.national-lottery.com/powerball/results/history
                 """)
 
                 with gr.Row():
